@@ -1,5 +1,5 @@
 --Author: Jonathan Gabriel Nava
---Descripción: Permite ver el porcentaje que lleva al generar o restaurar un respaldo de la base de datos de sql
+--Descripción: Permite ver el porcentaje que lleva al generar o restaurar un respaldo de la base de datos
 
 SELECT 
 	SDER.session_id AS SPID, 
