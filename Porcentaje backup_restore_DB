@@ -1,0 +1,13 @@
+--Author: Jonathan Gabriel Nava
+--Descripción: Permite ver el porcentaje que lleva al generar o restaurar un respaldo de la base de datos de sql
+
+SELECT 
+	SDER.session_id AS SPID, 
+	SDER.command, 
+	SDEST.text AS Query, 
+	SDER.start_time, 
+	SDER.percent_complete, 
+	DATEADD(SECOND, SDER.estimated_completion_time/1000, GETDATE()) AS estimated_completion_time 
+FROM sys.dm_exec_requests SDER 
+	 CROSS APPLY sys.dm_exec_sql_text(SDER.sql_handle) SDEST
+WHERE SDER.command in ('BACKUP DATABASE', 'BACKUP LOG', 'RESTORE DATABASE')
