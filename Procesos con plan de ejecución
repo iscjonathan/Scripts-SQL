@@ -1,3 +1,7 @@
+--Author: Jonathan Gabriel Nava
+--Descripción: Revisar los procesos que se están ejecutando en nuestra base de datos, además de mostrar el plan de ejecución de cada consulta, 
+--para poder ver temas de rendimiento de las consultas
+
 SELECT 
     r.session_id, 
     r.status, 
