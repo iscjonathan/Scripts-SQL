@@ -1,4 +1,6 @@
 --Author: Jonathan Gabriel Nava
+--Correo: iscjonathan@hotmail.com para cualquier duda o comentario
+
 --Descripción: Genera el script de mantenimiento de indices, cluster, non-clustered, spatial e indices particionados,
 --con la siguientes condiciones, si la fragmentación es >=5 y < 30, aplica un REORGANIZE y si la fragmentación es
 -->30 aplica un REBUILD, solo es cuestión de indicar el nombre de la base de datos y la tabla a revisar
