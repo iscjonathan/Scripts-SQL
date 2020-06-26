@@ -1,3 +1,7 @@
+
+--Author: Jonathan Gabriel Nava
+--Descripción: Revisar los procesos que se están ejecutando en nuestra base de datos
+
 SELECT	s.session_id
 		,DB_NAME(s.database_id) 'Database'
 		,r.STATUS
