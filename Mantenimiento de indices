@@ -1,0 +1,138 @@
+--Author: Jonathan Gabriel Nava
+--Descripción: Genera el script de mantenimiento de indices, cluster, non-clustered, spatial e indices particionados,
+--con la siguientes condiciones, si la fragmentación es >=5 y < 30, aplica un REORGANIZE y si la fragmentación es
+-->30 aplica un REBUILD, solo es cuestión de indicar el nombre de la base de datos y la tabla a revisar
+
+DECLARE @DatabaseName NVARCHAR(50) = 'DB_NAME'
+DECLARE @DataBaseId INT
+DECLARE @SchemaId INT
+DECLARE @TableName NVARCHAR(100) = 'TABLE_NAME'
+DECLARE	@IndexName NVARCHAR(100)
+DECLARE	@TableID INT
+DECLARE	@PartitionNumer INT
+DECLARE	@IndexId INT
+DECLARE	@IndexType NVARCHAR(60)
+DECLARE	@PadIndex BIT
+DECLARE	@AllowRowLocks BIT
+DECLARE	@AllowPageLocks BIT
+DECLARE	@FillFactor TINYINT
+DECLARE	@Fragmentacion FLOAT
+DECLARE @PartitionCount INT
+DECLARE @TSQL_ScriptMttoIndices NVARCHAR(MAX)
+DECLARE @TSQL_ScriptMttoIndices2 NVARCHAR(MAX)
+
+SET @DataBaseId = (SELECT database_id FROM sys.databases WITH(NOLOCK) WHERE name = @DatabaseName)
+
+DECLARE Crear_Script_MantenimientoIndices CURSOR FOR
+
+	SELECT
+		SC.schema_id AS SchemaId, 
+		ST.name AS TableName, 
+		SI.name AS IndexName,
+		ST.object_id AS TableId,
+		SP.partition_number AS PartitionNumber,
+		SI.index_id AS IndexId,
+		SI.type_desc AS IndexType,
+		SI.is_padded AS PadIndex,
+		SI.allow_row_locks AS AllowRowLocks,
+		SI.allow_page_locks AS AllowPageLocks,
+		SI.fill_factor,
+		(SELECT 
+			COUNT (SP1.partition_number) 
+		 FROM sys.indexes SI1 WITH(NOLOCK)
+		      JOIN sys.partitions SP1 WITH(NOLOCK) ON SP1.index_id = SI1.index_id AND SP1.object_id = SI1.object_id
+		 WHERE SI1.name = SI.name AND SI1.object_id = ST.object_id
+   		) PartitionCount
+		FROM sys.indexes SI
+		JOIN sys.tables ST WITH(NOLOCK) ON SI.object_id = ST.object_id
+		JOIN sys.schemas SC WITH(NOLOCK) ON SC.schema_id = ST.schema_id
+		LEFT JOIN sys.partitions SP WITH(NOLOCK) ON SP.object_id = ST.object_id AND SP.index_id = SI.index_id
+		WHERE ST.name = @TableName
+			  AND SI.name IS NOT NULL 
+	ORDER BY ST.name
+
+OPEN Crear_Script_MantenimientoIndices
+FETCH NEXT FROM Crear_Script_MantenimientoIndices INTO @SchemaId, @TableName, @IndexName, @TableID, @PartitionNumer, @IndexId, @IndexType, @PadIndex, @AllowRowLocks, @AllowPageLocks, @FillFactor, @PartitionCount
+WHILE (@@FETCH_STATUS = 0)
+	BEGIN
+		IF (@IndexId IS NOT NULL) AND (@PartitionNumer IS NOT NULL)
+			BEGIN
+				SET @Fragmentacion = (SELECT MAX(avg_fragmentation_in_percent) FROM sys.dm_db_index_physical_stats (@DataBaseId, @TableID, @IndexId, @PartitionNumer, NULL))
+			END
+		ELSE
+			BEGIN
+				SET @Fragmentacion = (SELECT MAX(avg_fragmentation_in_percent) FROM sys.dm_db_index_physical_stats (@DataBaseId, @TableID, @IndexId, NULL, NULL))
+			END
+		IF(@PartitionCount > 1)
+			BEGIN
+				IF (@Fragmentacion < 5)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'El indice ' + QUOTENAME(@IndexName) + ' de la tabla ' + QUOTENAME(@TableName) + ' no necesita mantenimiento, la fragmentaciòn de la particiòn: ' + CAST(@PartitionNumer AS VARCHAR) + ' es de: ' + CASE WHEN @Fragmentacion <> 0 THEN CAST(CAST(@Fragmentacion AS DECIMAL(20,14)) AS VARCHAR) ELSE CAST(@Fragmentacion AS VARCHAR) END
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia
+					END
+				IF (@Fragmentacion >= 5 AND @Fragmentacion <= 30)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REORGANIZE PARTITION = ' + CAST(@PartitionNumer AS VARCHAR) + ';'
+						SET @TSQL_ScriptMttoIndices2 = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REBUILD PARTITION = ' + CAST(@PartitionNumer AS VARCHAR) +
+							' WITH (SORT_IN_TEMPDB = OFF, ONLINE = OFF)'
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia1, @TSQL_ScriptMttoIndices2 AS Sentencia2
+					END
+				IF (@Fragmentacion > 30)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REBUILD PARTITION = ' + CAST(@PartitionNumer AS VARCHAR) +
+							' WITH (SORT_IN_TEMPDB = OFF, ONLINE = OFF)'
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia
+					END
+			END
+		IF (@PartitionCount = 1)
+			BEGIN
+				IF (@Fragmentacion < 5)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'El indice ' + QUOTENAME(@IndexName) + ' de la tabla ' + QUOTENAME(@TableName) + ' no necesita mantenimiento, su fragmentaciòn es de: ' + CASE WHEN @Fragmentacion <> 0 THEN CAST(CAST(@Fragmentacion AS DECIMAL(20,14)) AS VARCHAR) ELSE CAST(@Fragmentacion AS VARCHAR) END
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia
+					END
+				IF (@Fragmentacion >= 5 AND @Fragmentacion <= 30)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REORGANIZE;'
+						SET @TSQL_ScriptMttoIndices2 = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REBUILD PARTITION = ALL' +
+							' WITH (PAD_INDEX = ' + CASE WHEN @PadIndex = 0 THEN 'OFF, ' ELSE 'ON, ' END + 'STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ' + CASE WHEN @AllowRowLocks = 0 THEN 'OFF, ' ELSE 'ON, ' END +
+							'ALLOW_PAGE_LOCKS = ' + CASE WHEN @AllowPageLocks = 0 THEN 'OFF' ELSE 'ON' END + CASE WHEN @FillFactor > 0 THEN ', FILLFACTOR = ' + CAST(@FillFactor AS VARCHAR) ELSE '' END + ')'
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia1, @TSQL_ScriptMttoIndices2 AS Sentencia2
+					END
+				IF (@Fragmentacion > 30)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REBUILD PARTITION = ALL' +
+							' WITH (PAD_INDEX = ' + CASE WHEN @PadIndex = 0 THEN 'OFF, ' ELSE 'ON, ' END + 'STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ' + CASE WHEN @AllowRowLocks = 0 THEN 'OFF, ' ELSE 'ON, ' END +
+							'ALLOW_PAGE_LOCKS = ' + CASE WHEN @AllowPageLocks = 0 THEN 'OFF' ELSE 'ON' END + CASE WHEN @FillFactor > 0 THEN ', FILLFACTOR = ' + CAST(@FillFactor AS VARCHAR) ELSE '' END + ')'
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia
+					END
+			END
+
+			IF (@IndexType = 'SPATIAL')
+			BEGIN
+				IF (@Fragmentacion < 5)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'El indice ' + QUOTENAME(@IndexName) + ' de la tabla ' + QUOTENAME(@TableName) + ' no necesita mantenimiento, su fragmentaciòn es de: ' + CASE WHEN @Fragmentacion <> 0 THEN CAST(CAST(@Fragmentacion AS DECIMAL(20,14)) AS VARCHAR) ELSE CAST(@Fragmentacion AS VARCHAR) END
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia
+					END
+				IF (@Fragmentacion >= 5 AND @Fragmentacion <= 30)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REORGANIZE;'
+						SET @TSQL_ScriptMttoIndices2 = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REBUILD PARTITION = ALL' +
+							' WITH (PAD_INDEX = ' + CASE WHEN @PadIndex = 0 THEN 'OFF, ' ELSE 'ON, ' END + 'STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ' + CASE WHEN @AllowRowLocks = 0 THEN 'OFF, ' ELSE 'ON, ' END +
+							'ALLOW_PAGE_LOCKS = ' + CASE WHEN @AllowPageLocks = 0 THEN 'OFF' ELSE 'ON' END + CASE WHEN @FillFactor > 0 THEN ', FILLFACTOR = ' + CAST(@FillFactor AS VARCHAR) ELSE '' END + ')'
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia1, @TSQL_ScriptMttoIndices2 AS Sentencia2
+					END
+				IF (@Fragmentacion > 30)
+					BEGIN
+						SET @TSQL_ScriptMttoIndices = 'USE ' + QUOTENAME(@DatabaseName) + '; ALTER INDEX ' + QUOTENAME(@IndexName) + ' ON ' + QUOTENAME(SCHEMA_NAME(@SchemaId)) + '.' + QUOTENAME(@TableName) + ' REBUILD PARTITION = ALL' +
+							' WITH (PAD_INDEX = ' + CASE WHEN @PadIndex = 0 THEN 'OFF, ' ELSE 'ON, ' END + 'STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ' + CASE WHEN @AllowRowLocks = 0 THEN 'OFF, ' ELSE 'ON, ' END +
+							'ALLOW_PAGE_LOCKS = ' + CASE WHEN @AllowPageLocks = 0 THEN 'OFF' ELSE 'ON' END + CASE WHEN @FillFactor > 0 THEN ', FILLFACTOR = ' + CAST(@FillFactor AS VARCHAR) ELSE '' END + ')'
+						SELECT @TableName AS TableName, @IndexName AS IndexName, @Fragmentacion AS Fragmentacion, @TSQL_ScriptMttoIndices AS Sentencia
+					END
+			END
+		
+		FETCH NEXT FROM Crear_Script_MantenimientoIndices INTO @SchemaId, @TableName, @IndexName, @TableID, @PartitionNumer, @IndexId, @IndexType, @PadIndex, @AllowRowLocks, @AllowPageLocks, @FillFactor, @PartitionCount
+	END
+CLOSE Crear_Script_MantenimientoIndices
+DEALLOCATE Crear_Script_MantenimientoIndices
