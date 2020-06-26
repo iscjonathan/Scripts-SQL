@@ -1,4 +1,6 @@
 --Author: Jonathan Gabriel Nava
+--Correo: iscjonathan@hotmail.com para cualquier duda o comentario
+
 --Descripción: Revisar los procesos que se están ejecutando en nuestra base de datos, además de mostrar el plan de ejecución de cada consulta, 
 --para poder ver temas de rendimiento de las consultas
 
