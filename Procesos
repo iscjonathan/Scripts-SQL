@@ -1,5 +1,6 @@
-
 --Author: Jonathan Gabriel Nava
+--Correo: iscjonathan@hotmail.com para cualquier duda o comentario
+
 --Descripción: Revisar los procesos que se están ejecutando en nuestra base de datos
 
 SELECT	s.session_id
