@@ -1,4 +1,6 @@
 --Author: Jonathan Gabriel Nava
+--Correo: iscjonathan@hotmail.com para cualquier duda o comentario
+
 --Descripción: Permite ver el porcentaje que lleva al generar o restaurar un respaldo de la base de datos
 
 SELECT 
